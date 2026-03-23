@@ -1,0 +1,39 @@
+{{- if .Values.frontend.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gym-frontend
+spec:
+  replicas: {{ .Values.frontend.replicaCount }}
+  selector:
+    matchLabels:
+      app: gym-frontend
+  template:
+    metadata:
+      labels:
+        app: gym-frontend
+    spec:
+      containers:
+      - name: gym-frontend
+        image: {{ .Values.acr.name }}.azurecr.io/gym-frontend:{{ .Values.frontend.tag }}
+        ports:
+        - containerPort: 80
+        env:
+        - name: REACT_APP_BOOKING_URL
+          value: "http://gym-booking-service:4001"
+        - name: REACT_APP_MEMBERSHIP_URL
+          value: "http://gym-membership-service:4002"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gym-frontend-service
+spec:
+  selector:
+    app: gym-frontend
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 80
+  type: ClusterIP
+{{- end }}

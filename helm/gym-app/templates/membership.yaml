@@ -1,0 +1,45 @@
+{{- if .Values.membership.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gym-membership
+spec:
+  replicas: {{ .Values.membership.replicaCount }}
+  selector:
+    matchLabels:
+      app: gym-membership
+  template:
+    metadata:
+      labels:
+        app: gym-membership
+    spec:
+      containers:
+      - name: gym-membership
+        image: {{ .Values.acr.name }}.azurecr.io/gym-membership:{{ .Values.membership.tag }}
+        ports:
+        - containerPort: 4002
+        env:
+        - name: DB_HOST
+          value: "gym-db-service"
+        - name: DB_USER
+          value: "root"
+        - name: DB_PASSWORD
+          value: "gymrootpass"
+        - name: DB_NAME
+          value: "gymapp"
+        - name: NOTIFIER_URL
+          value: "http://gym-notifier-service:4003"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gym-membership-service
+spec:
+  selector:
+    app: gym-membership
+  ports:
+    - protocol: TCP
+      port: 4002
+      targetPort: 4002
+  type: ClusterIP
+{{- end }}

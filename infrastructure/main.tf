@@ -1,5 +1,5 @@
 resource "azurerm_resource_group" "gym_rg" {
-  name     = "gym-app-${var.env}-rg"
+  name     = "gym-app-shared-rg"
   location = var.location
   tags     = var.tags
 }
@@ -42,7 +42,7 @@ module "aks" {
   source              = "./modules/aks"
   resource_group_name = azurerm_resource_group.gym_rg.name
   location            = azurerm_resource_group.gym_rg.location
-  cluster_name        = "gym-${var.env}-aks"
+  cluster_name        = "gym-shared-aks"
   dns_prefix          = var.dns_prefix
   node_count          = var.node_count
   vm_size             = var.vm_size
@@ -72,12 +72,12 @@ module "acr" {
 }
 
 data "azurerm_public_ip" "appgw_pip" {
-  name                = "${var.appgw_pip_name}-${var.env}"
+  name                = "gym-shared-appgw-pip"
   resource_group_name = var.pip_resource_group
 }
 
 resource "azurerm_application_gateway" "appgw" {
-  name                = "${var.appgw_name}-${var.env}"
+  name                = "gym-shared-appgw"
   resource_group_name = azurerm_resource_group.gym_rg.name
   location            = azurerm_resource_group.gym_rg.location
   tags                = var.tags

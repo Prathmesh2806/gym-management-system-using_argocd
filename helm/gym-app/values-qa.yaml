@@ -1,0 +1,15 @@
+# QA-specific overrides
+domain: the-fitzone-qa.duckdns.org
+tlsSecret: gym-tls-qa
+
+# Use 2 replicas for some services to test load
+db:
+  replicaCount: 1
+booking:
+  replicaCount: 2
+membership:
+  replicaCount: 2
+notifier:
+  replicaCount: 1
+frontend:
+  replicaCount: 2

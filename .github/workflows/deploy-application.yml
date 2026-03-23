@@ -86,30 +86,15 @@ jobs:
 
       - name: Set Context Variables
         run: |
-          if [ "${{ github.event_name }}" == "repository_dispatch" ] && [ -n "${{ github.event.client_payload.acr_name }}" ]; then
-            echo "ACR_NAME=${{ github.event.client_payload.acr_name }}" >> $GITHUB_ENV
-            echo "DEV_ACR_NAME=${{ github.event.client_payload.source_acr_name || 'gymappregdevunique' }}" >> $GITHUB_ENV
-          else
-            # Dynamically fetch ACR Name from the environment's resource group
-            RG_NAME="gym-app-${{ env.DEPLOY_ENV }}-rg"
-            echo "RG_NAME=$RG_NAME" >> $GITHUB_ENV
-            
-            # Try to fetch the ACR name from the RG
-            FETCHED_ACR=$(az acr list --resource-group $RG_NAME --query "[0].name" -o tsv)
-            if [ -n "$FETCHED_ACR" ]; then
-              echo "ACR_NAME=$FETCHED_ACR" >> $GITHUB_ENV
-            else
-              echo "WARNING: Could not find ACR in $RG_NAME. Falling back to guess."
-              echo "ACR_NAME=gymappregistry${{ env.DEPLOY_ENV }}unique" >> $GITHUB_ENV
-            fi
-
-            # Always need to know the DEV ACR for promotions
-            DEV_RG="gym-app-dev-rg"
-            FETCHED_DEV_ACR=$(az acr list --resource-group $DEV_RG --query "[0].name" -o tsv)
-            echo "DEV_ACR_NAME=${FETCHED_DEV_ACR:-gymappregistrydevunique}" >> $GITHUB_ENV
-          fi
+          # The Resource Group and Cluster are now shared across all environments
+          echo "RG_NAME=gym-app-shared-rg" >> $GITHUB_ENV
+          echo "CLUSTER_NAME=gym-shared-aks" >> $GITHUB_ENV
           
-          echo "CLUSTER_NAME=gym-${{ env.DEPLOY_ENV }}-aks" >> $GITHUB_ENV
+          # We use a single shared ACR
+          echo "ACR_NAME=gymappregshared" >> $GITHUB_ENV
+          
+          # For promotions, if needed, we can still reference a source ACR
+          echo "DEV_ACR_NAME=gymappregshared" >> $GITHUB_ENV
 
       - name: Azure ACR and AKS Login
         run: |
@@ -117,93 +102,45 @@ jobs:
           az acr login --name ${{ env.ACR_NAME }}
           az aks get-credentials --resource-group ${{ env.RG_NAME }} --name ${{ env.CLUSTER_NAME }} --overwrite-existing
 
-      # --- Database Section ---
-      - name: Deploy Database
+      # --- Database Section (Build/Promote Only) ---
+      - name: Prepare Database Image
         if: github.event_name == 'push' || github.event.inputs.deploy_db == true || github.event.inputs.deploy_db == 'true' || github.event_name == 'repository_dispatch'
         run: |
           SERVICE="db"
           SHORT_SHA=$(echo ${{ github.sha }} | cut -c1-8)
           BUILD_REQUIRED=false
-          DEPLOY_REQUIRED=false
           
           if [ "${{ github.event_name }}" == "push" ]; then
-            if git diff --name-only HEAD^ HEAD | grep -q "src/$SERVICE" || git diff --name-only HEAD^ HEAD | grep -q "kube/$SERVICE-deploy.yaml"; then
-              DEPLOY_REQUIRED=true
-              if git diff --name-only HEAD^ HEAD | grep -q "src/$SERVICE"; then BUILD_REQUIRED=true; fi
-            fi
+            if git diff --name-only HEAD^ HEAD | grep -q "src/$SERVICE"; then BUILD_REQUIRED=true; fi
+          elif [ -z "${{ env.DB_PROMOTE }}" ]; then
+             if git diff --name-only HEAD^ HEAD | grep -q "src/$SERVICE"; then BUILD_REQUIRED=true; fi
+          fi
+
+          FINAL_TAG=""
+          if [ -n "${{ env.DB_PROMOTE }}" ]; then
+            FINAL_TAG=${{ env.DB_PROMOTE }}
+          elif [ "$BUILD_REQUIRED" == "true" ]; then
+            FINAL_TAG="$SERVICE-$SHORT_SHA"
+            docker build -t ${{ env.ACR_NAME }}.azurecr.io/gym-$SERVICE:$FINAL_TAG ./src/$SERVICE
+            docker push ${{ env.ACR_NAME }}.azurecr.io/gym-$SERVICE:$FINAL_TAG
           else
-            # For manual/dispatch runs
-            DEPLOY_REQUIRED=true
-            if [ -n "${{ env.DB_PROMOTE }}" ]; then
-              # Using a specific tag for promotion/deployment
-              :
-            else
-              # Smart check for manual triggers: only build if code changed
-              if git diff --name-only HEAD^ HEAD | grep -q "src/$SERVICE" || git diff --name-only HEAD^ HEAD | grep -q "kube/$SERVICE-deploy.yaml"; then
-                BUILD_REQUIRED=true
-              else
-                echo "No code changes detected in src/$SERVICE. Skipping fresh build, will deploy existing image."
-              fi
-            fi
+            FINAL_TAG=$(az acr repository show-tags --name ${{ env.ACR_NAME }} --repository gym-$SERVICE --orderby time_desc --output tsv --query "[0]" 2>/dev/null || echo "latest")
           fi
+          echo "DB_TAG=$FINAL_TAG" >> $GITHUB_ENV
 
-          # Always update the registry hostname in the YAML to match the current environment
-          echo "Updating ACR registry prefix in kube/$SERVICE-deploy.yaml to ${{ env.ACR_NAME }}..."
-          sed -i "s|[a-zA-Z0-9]*\.azurecr\.io|${{ env.ACR_NAME }}.azurecr.io|g" kube/$SERVICE-deploy.yaml
-
-          if [ "$DEPLOY_REQUIRED" == "true" ]; then
-            FINAL_TAG=""
-            if [ -n "${{ env.DB_PROMOTE }}" ]; then
-              if [ "${{ env.DEPLOY_ENV }}" != "dev" ]; then
-                echo "Promoting $SERVICE with tag ${{ env.DB_PROMOTE }} from Dev ACR..."
-                az acr import --name ${{ env.ACR_NAME }} --source ${{ env.DEV_ACR_NAME }}.azurecr.io/gym-$SERVICE:${{ env.DB_PROMOTE }} --image gym-$SERVICE:${{ env.DB_PROMOTE }} --force
-              fi
-              FINAL_TAG=${{ env.DB_PROMOTE }}
-            elif [ "$BUILD_REQUIRED" == "true" ]; then
-              echo "Building fresh image for $SERVICE..."
-              FINAL_TAG="$SERVICE-$SHORT_SHA"
-              docker build -t ${{ env.ACR_NAME }}.azurecr.io/gym-$SERVICE:$FINAL_TAG ./src/$SERVICE
-              docker push ${{ env.ACR_NAME }}.azurecr.io/gym-$SERVICE:$FINAL_TAG
-            else
-              echo "Searching for latest existing image for $SERVICE in ACR..."
-              LATEST_ACR_TAG=$(az acr repository show-tags --name ${{ env.ACR_NAME }} --repository gym-$SERVICE --orderby time_desc --output tsv --query "[0]" 2>/dev/null || echo "")
-              if [ -n "$LATEST_ACR_TAG" ]; then
-                echo "Found latest tag: $LATEST_ACR_TAG"
-                FINAL_TAG="$LATEST_ACR_TAG"
-              else
-                echo "No image found in ACR for gym-$SERVICE. Forcing build..."
-                FINAL_TAG="$SERVICE-$SHORT_SHA"
-                docker build -t ${{ env.ACR_NAME }}.azurecr.io/gym-$SERVICE:$FINAL_TAG ./src/$SERVICE
-                docker push ${{ env.ACR_NAME }}.azurecr.io/gym-$SERVICE:$FINAL_TAG
-              fi
-            fi
-            
-            if [ -n "$FINAL_TAG" ]; then
-              echo "Setting image tag to $FINAL_TAG in kube/$SERVICE-deploy.yaml"
-              sed -i "s|image:.*|image: ${{ env.ACR_NAME }}.azurecr.io/gym-$SERVICE:$FINAL_TAG|" kube/$SERVICE-deploy.yaml
-            fi
-            
-            echo "Deploying $SERVICE to AKS..."
-            kubectl apply -f kube/$SERVICE-deploy.yaml
-          fi
-
-      # --- Backend Services Loop ---
-      - name: Deploy Backends
+      # --- Backend Services Loop (Build/Promote Only) ---
+      - name: Prepare Backend Images
         run: |
           SHORT_SHA=$(echo ${{ github.sha }} | cut -c1-8)
           SERVICES=("booking" "membership" "notifier")
           
           for SERVICE in "${SERVICES[@]}"; do
-            INPUT_NAME="deploy_$SERVICE"
-            # Get promote tag dynamically
             PROMOTE_VAR=$(echo "${SERVICE}_PROMOTE" | tr '[:lower:]' '[:upper:]')
             PROMOTE_TAG=${!PROMOTE_VAR}
             
             SHOULD_RUN=false
-            if [ "${{ github.event_name }}" == "push" ]; then
-               SHOULD_RUN=true
-            elif [ "${{ github.event_name }}" == "repository_dispatch" ]; then
-               SHOULD_RUN=true
+            if [ "${{ github.event_name }}" == "push" ]; then SHOULD_RUN=true;
+            elif [ "${{ github.event_name }}" == "repository_dispatch" ]; then SHOULD_RUN=true;
             elif [ "${{ github.event.inputs.deploy_booking }}" == "true" ] && [ "$SERVICE" == "booking" ]; then SHOULD_RUN=true;
             elif [ "${{ github.event.inputs.deploy_membership }}" == "true" ] && [ "$SERVICE" == "membership" ]; then SHOULD_RUN=true;
             elif [ "${{ github.event.inputs.deploy_notifier }}" == "true" ] && [ "$SERVICE" == "notifier" ]; then SHOULD_RUN=true;
@@ -211,150 +148,77 @@ jobs:
 
             if [ "$SHOULD_RUN" == "true" ]; then
               BUILD_REQUIRED=false
-              DEPLOY_REQUIRED=false
-              
               if [ "${{ github.event_name }}" == "push" ]; then
-                if git diff --name-only HEAD^ HEAD | grep -q "src/$SERVICE" || git diff --name-only HEAD^ HEAD | grep -q "kube/$SERVICE-deploy.yaml"; then
-                  DEPLOY_REQUIRED=true
-                  if git diff --name-only HEAD^ HEAD | grep -q "src/$SERVICE"; then BUILD_REQUIRED=true; fi
-                fi
+                if git diff --name-only HEAD^ HEAD | grep -q "src/$SERVICE"; then BUILD_REQUIRED=true; fi
+              elif [ -z "$PROMOTE_TAG" ]; then
+                if git diff --name-only HEAD^ HEAD | grep -q "src/$SERVICE"; then BUILD_REQUIRED=true; fi
+              fi
+
+              FINAL_TAG=""
+              if [ -n "$PROMOTE_TAG" ]; then
+                FINAL_TAG=$PROMOTE_TAG
+              elif [ "$BUILD_REQUIRED" == "true" ]; then
+                FINAL_TAG="$SERVICE-$SHORT_SHA"
+                docker build -t ${{ env.ACR_NAME }}.azurecr.io/gym-$SERVICE:$FINAL_TAG ./src/$SERVICE
+                docker push ${{ env.ACR_NAME }}.azurecr.io/gym-$SERVICE:$FINAL_TAG
               else
-                # For manual/dispatch runs
-                DEPLOY_REQUIRED=true
-                if [ -n "$PROMOTE_TAG" ]; then
-                  # Using a specific tag
-                  :
-                else
-                  # Smart check for manual triggers
-                  if git diff --name-only HEAD^ HEAD | grep -q "src/$SERVICE" || git diff --name-only HEAD^ HEAD | grep -q "kube/$SERVICE-deploy.yaml"; then
-                    BUILD_REQUIRED=true
-                  else
-                    echo "No code changes detected in src/$SERVICE. Skipping fresh build, will deploy existing image."
-                  fi
-                fi
+                FINAL_TAG=$(az acr repository show-tags --name ${{ env.ACR_NAME }} --repository gym-$SERVICE --orderby time_desc --output tsv --query "[0]" 2>/dev/null || echo "latest")
               fi
-
-              # Always update the registry hostname in the YAML to match the current environment
-              echo "Updating ACR registry prefix in kube/$SERVICE-deploy.yaml to ${{ env.ACR_NAME }}..."
-              sed -i "s|[a-zA-Z0-9]*\.azurecr\.io|${{ env.ACR_NAME }}.azurecr.io|g" kube/$SERVICE-deploy.yaml
-
-              if [ "$DEPLOY_REQUIRED" == "true" ]; then
-                FINAL_TAG=""
-                if [ -n "$PROMOTE_TAG" ]; then
-                  if [ "${{ env.DEPLOY_ENV }}" != "dev" ]; then
-                    echo "Promoting $SERVICE with tag $PROMOTE_TAG from Dev ACR..."
-                    az acr import --name ${{ env.ACR_NAME }} --source ${{ env.DEV_ACR_NAME }}.azurecr.io/gym-$SERVICE:$PROMOTE_TAG --image gym-$SERVICE:$PROMOTE_TAG --force
-                  fi
-                  FINAL_TAG=$PROMOTE_TAG
-                elif [ "$BUILD_REQUIRED" == "true" ]; then
-                  echo "Building fresh image for $SERVICE..."
-                  FINAL_TAG="$SERVICE-$SHORT_SHA"
-                  docker build -t ${{ env.ACR_NAME }}.azurecr.io/gym-$SERVICE:$FINAL_TAG ./src/$SERVICE
-                  docker push ${{ env.ACR_NAME }}.azurecr.io/gym-$SERVICE:$FINAL_TAG
-                else
-                  echo "Searching for latest existing image for $SERVICE in ACR..."
-                  LATEST_ACR_TAG=$(az acr repository show-tags --name ${{ env.ACR_NAME }} --repository gym-$SERVICE --orderby time_desc --output tsv --query "[0]" 2>/dev/null || echo "")
-                  if [ -n "$LATEST_ACR_TAG" ]; then
-                    echo "Found latest tag: $LATEST_ACR_TAG"
-                    FINAL_TAG="$LATEST_ACR_TAG"
-                  else
-                    echo "No image found in ACR for gym-$SERVICE. Forcing build..."
-                    FINAL_TAG="$SERVICE-$SHORT_SHA"
-                    docker build -t ${{ env.ACR_NAME }}.azurecr.io/gym-$SERVICE:$FINAL_TAG ./src/$SERVICE
-                    docker push ${{ env.ACR_NAME }}.azurecr.io/gym-$SERVICE:$FINAL_TAG
-                  fi
-                fi
-                
-                if [ -n "$FINAL_TAG" ]; then
-                  echo "Setting image tag to $FINAL_TAG in kube/$SERVICE-deploy.yaml"
-                  sed -i "s|image:.*|image: ${{ env.ACR_NAME }}.azurecr.io/gym-$SERVICE:$FINAL_TAG|" kube/$SERVICE-deploy.yaml
-                fi
-                echo "Deploying $SERVICE to AKS..."
-                kubectl apply -f kube/$SERVICE-deploy.yaml
-              fi
+              
+              ENV_VAR_NAME=$(echo "${SERVICE}_TAG" | tr '[:lower:]' '[:upper:]')
+              echo "$ENV_VAR_NAME=$FINAL_TAG" >> $GITHUB_ENV
             fi
           done
 
-      # --- Frontend Section ---
-      - name: Deploy Frontend
+      # --- Frontend Section (Build/Promote Only) ---
+      - name: Prepare Frontend Image
         if: github.event_name == 'push' || github.event.inputs.deploy_frontend == true || github.event.inputs.deploy_frontend == 'true' || github.event_name == 'repository_dispatch'
         run: |
           SERVICE="frontend"
           SHORT_SHA=$(echo ${{ github.sha }} | cut -c1-8)
           BUILD_REQUIRED=false
-          DEPLOY_REQUIRED=false
           
           if [ "${{ github.event_name }}" == "push" ]; then
-            if git diff --name-only HEAD^ HEAD | grep -q "src/$SERVICE" || git diff --name-only HEAD^ HEAD | grep -q "kube/$SERVICE-deploy.yaml" || git diff --name-only HEAD^ HEAD | grep -q "kube/gym-ingress.yaml"; then
-              DEPLOY_REQUIRED=true
-              if git diff --name-only HEAD^ HEAD | grep -q "src/$SERVICE"; then BUILD_REQUIRED=true; fi
-            fi
+            if git diff --name-only HEAD^ HEAD | grep -q "src/$SERVICE"; then BUILD_REQUIRED=true; fi
+          elif [ -z "${{ env.FRONTEND_PROMOTE }}" ]; then
+            if git diff --name-only HEAD^ HEAD | grep -q "src/$SERVICE"; then BUILD_REQUIRED=true; fi
+          fi
+
+          FINAL_TAG=""
+          if [ -n "${{ env.FRONTEND_PROMOTE }}" ]; then
+            FINAL_TAG=${{ env.FRONTEND_PROMOTE }}
+          elif [ "$BUILD_REQUIRED" == "true" ]; then
+            FINAL_TAG="$SERVICE-$SHORT_SHA"
+            docker build -t ${{ env.ACR_NAME }}.azurecr.io/gym-$SERVICE:$FINAL_TAG ./src/$SERVICE
+            docker push ${{ env.ACR_NAME }}.azurecr.io/gym-$SERVICE:$FINAL_TAG
           else
-            # For manual/dispatch runs
-            DEPLOY_REQUIRED=true
-            if [ -n "${{ env.FRONTEND_PROMOTE }}" ]; then
-              # Using a specific tag
-              :
-            else
-              # Smart check for manual triggers
-              if git diff --name-only HEAD^ HEAD | grep -q "src/$SERVICE" || git diff --name-only HEAD^ HEAD | grep -q "kube/$SERVICE-deploy.yaml" || git diff --name-only HEAD^ HEAD | grep -q "kube/gym-ingress.yaml"; then
-                BUILD_REQUIRED=true
-              else
-                echo "No code changes detected in src/$SERVICE. Skipping fresh build, will deploy existing image."
-              fi
-            fi
+            FINAL_TAG=$(az acr repository show-tags --name ${{ env.ACR_NAME }} --repository gym-$SERVICE --orderby time_desc --output tsv --query "[0]" 2>/dev/null || echo "latest")
           fi
+          echo "FRONTEND_TAG=$FINAL_TAG" >> $GITHUB_ENV
+
+      # --- Unified Helm Deployment ---
+      - name: Deploy with Helm
+        run: |
+          # Use defaults from GITHUB_ENV if not specifically set in this run
+          DB_TAG=${{ env.DB_TAG || 'latest' }}
+          BOOKING_TAG=${{ env.BOOKING_TAG || 'latest' }}
+          MEMBERSHIP_TAG=${{ env.MEMBERSHIP_TAG || 'latest' }}
+          NOTIFIER_TAG=${{ env.NOTIFIER_TAG || 'latest' }}
+          FRONTEND_TAG=${{ env.FRONTEND_TAG || 'latest' }}
           
-          if [ "$DEPLOY_REQUIRED" == "true" ]; then
-            # Always update the registry hostname in the YAML to match the current environment
-            echo "Updating ACR registry prefix in kube/$SERVICE-deploy.yaml to ${{ env.ACR_NAME }}..."
-            sed -i "s|[a-zA-Z0-9]*\.azurecr\.io|${{ env.ACR_NAME }}.azurecr.io|g" kube/$SERVICE-deploy.yaml
-
-            # Install cert-manager and issuer
-            kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.2/cert-manager.yaml
-            echo "Waiting for cert-manager to be ready..."
-            kubectl wait --for=condition=available --timeout=300s deployment/cert-manager-webhook -n cert-manager
-            kubectl apply -f kube/cluster-issuer.yaml
-
-            FINAL_TAG=""
-            if [ -n "${{ env.FRONTEND_PROMOTE }}" ]; then
-              if [ "${{ env.DEPLOY_ENV }}" != "dev" ]; then
-                echo "Promoting $SERVICE with tag ${{ env.FRONTEND_PROMOTE }} from Dev ACR..."
-                az acr import --name ${{ env.ACR_NAME }} --source ${{ env.DEV_ACR_NAME }}.azurecr.io/gym-$SERVICE:${{ env.FRONTEND_PROMOTE }} --image gym-$SERVICE:${{ env.FRONTEND_PROMOTE }} --force
-              fi
-              FINAL_TAG=${{ env.FRONTEND_PROMOTE }}
-            elif [ "$BUILD_REQUIRED" == "true" ]; then
-              echo "Building fresh image for $SERVICE..."
-              FINAL_TAG="$SERVICE-$SHORT_SHA"
-              docker build -t ${{ env.ACR_NAME }}.azurecr.io/gym-$SERVICE:$FINAL_TAG ./src/$SERVICE
-              docker push ${{ env.ACR_NAME }}.azurecr.io/gym-$SERVICE:$FINAL_TAG
-            else
-              echo "Searching for latest existing image for $SERVICE in ACR..."
-              LATEST_ACR_TAG=$(az acr repository show-tags --name ${{ env.ACR_NAME }} --repository gym-$SERVICE --orderby time_desc --output tsv --query "[0]" 2>/dev/null || echo "")
-              if [ -n "$LATEST_ACR_TAG" ]; then
-                echo "Found latest tag: $LATEST_ACR_TAG"
-                FINAL_TAG="$LATEST_ACR_TAG"
-              else
-                echo "No image found in ACR for gym-$SERVICE. Forcing build..."
-                FINAL_TAG="$SERVICE-$SHORT_SHA"
-                docker build -t ${{ env.ACR_NAME }}.azurecr.io/gym-$SERVICE:$FINAL_TAG ./src/$SERVICE
-                docker push ${{ env.ACR_NAME }}.azurecr.io/gym-$SERVICE:$FINAL_TAG
-              fi
-            fi
-            
-            if [ -n "$FINAL_TAG" ]; then
-              echo "Setting image tag to $FINAL_TAG in kube/$SERVICE-deploy.yaml"
-              sed -i "s|image:.*|image: ${{ env.ACR_NAME }}.azurecr.io/gym-$SERVICE:$FINAL_TAG|" kube/$SERVICE-deploy.yaml
-            fi
-
-            # Ingress logic
-            DOMAIN="the-fitzone-${{ env.DEPLOY_ENV }}.duckdns.org"
-            TLS_SECRET="gym-tls-${{ env.DEPLOY_ENV }}"
-            sed -i "s|__DOMAIN__|$DOMAIN|g" kube/gym-ingress.yaml
-            sed -i "s|__TLS_SECRET__|$TLS_SECRET|g" kube/gym-ingress.yaml
-            
-            echo "Deploying $SERVICE to AKS..."
-            kubectl apply -f kube/$SERVICE-deploy.yaml
-            echo "Applying Ingress and TLS config..."
-            kubectl apply -f kube/gym-ingress.yaml
-          fi
+          # Deploying with Helm
+          helm upgrade --install gym-app ./helm/gym-app \
+            --namespace ${{ env.DEPLOY_ENV }} \
+            --create-namespace \
+            -f ./helm/gym-app/values-${{ env.DEPLOY_ENV }}.yaml \
+            --set acr.name=${{ env.ACR_NAME }} \
+            --set db.enabled=${{ github.event.inputs.deploy_db || 'true' }} \
+            --set db.tag=$DB_TAG \
+            --set booking.enabled=${{ github.event.inputs.deploy_booking || 'true' }} \
+            --set booking.tag=$BOOKING_TAG \
+            --set membership.enabled=${{ github.event.inputs.deploy_membership || 'true' }} \
+            --set membership.tag=$MEMBERSHIP_TAG \
+            --set notifier.enabled=${{ github.event.inputs.deploy_notifier || 'true' }} \
+            --set notifier.tag=$NOTIFIER_TAG \
+            --set frontend.enabled=${{ github.event.inputs.deploy_frontend || 'true' }} \
+            --set frontend.tag=$FRONTEND_TAG

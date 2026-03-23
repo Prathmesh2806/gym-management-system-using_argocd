@@ -1,0 +1,26 @@
+{{- if .Values.frontend.enabled -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: gym-app-ingress
+  annotations:
+    appgw.ingress.kubernetes.io/ssl-redirect: "true"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  ingressClassName: azure-application-gateway
+  tls:
+  - hosts:
+    - {{ .Values.domain }}
+    secretName: {{ .Values.tlsSecret }}
+  rules:
+  - host: {{ .Values.domain }}
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: gym-frontend-service
+            port:
+              number: 80
+{{- end }}

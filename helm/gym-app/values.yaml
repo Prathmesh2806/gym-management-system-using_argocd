@@ -1,0 +1,32 @@
+# Default values for gym-app.
+acr:
+  name: gymappregshared
+
+# Individual services tags and replicas
+db:
+  enabled: true
+  tag: latest
+  replicaCount: 1
+
+booking:
+  enabled: true
+  tag: latest
+  replicaCount: 1
+
+membership:
+  enabled: true
+  tag: latest
+  replicaCount: 1
+
+notifier:
+  enabled: true
+  tag: latest
+  replicaCount: 1
+
+frontend:
+  enabled: true
+  tag: latest
+  replicaCount: 1
+
+domain: the-fitzone-shared.duckdns.org
+tlsSecret: gym-tls-shared

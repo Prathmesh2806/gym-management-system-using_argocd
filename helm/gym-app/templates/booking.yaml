@@ -1,0 +1,45 @@
+{{- if .Values.booking.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gym-booking
+spec:
+  replicas: {{ .Values.booking.replicaCount }}
+  selector:
+    matchLabels:
+      app: gym-booking
+  template:
+    metadata:
+      labels:
+        app: gym-booking
+    spec:
+      containers:
+      - name: gym-booking
+        image: {{ .Values.acr.name }}.azurecr.io/gym-booking:{{ .Values.booking.tag }}
+        ports:
+        - containerPort: 4001
+        env:
+        - name: DB_HOST
+          value: "gym-db-service"
+        - name: DB_USER
+          value: "root"
+        - name: DB_PASSWORD
+          value: "gymrootpass"
+        - name: DB_NAME
+          value: "gymapp"
+        - name: NOTIFIER_URL
+          value: "http://gym-notifier-service:4003"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gym-booking-service
+spec:
+  selector:
+    app: gym-booking
+  ports:
+    - protocol: TCP
+      port: 4001
+      targetPort: 4001
+  type: ClusterIP
+{{- end }}
