@@ -1,5 +1,5 @@
 # Dev-specific overrides
-domain: the-fitness-arena-dev.duckdns.org
+domain: the-fitzone-dev.duckdns.org
 tlsSecret: gym-tls-dev
 
 # Use 1 replica for dev

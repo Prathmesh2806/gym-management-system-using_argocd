@@ -114,9 +114,12 @@ jobs:
         run: |
           IP_ADDR=$(echo "${{ steps.get_outputs.outputs.public_ip }}" | tr -d '\r' | tr -d '\n' | xargs)
           TOKEN=$(echo "${{ secrets.DUCKDNS_TOKEN }}" | tr -d '\r' | tr -d '\n' | xargs)
-          # Note: We might need a separate mechanism for domain management if they share an IP
-          # For now, let's keep one shared base domain or handle it in the app deploy
-          echo "Public IP is $IP_ADDR"
+          
+          # Domains are the-fitzone-dev and the-fitzone-qa
+          DOMAINS="the-fitzone-dev,the-fitzone-qa"
+          
+          echo "Updating DuckDNS for $DOMAINS with IP: $IP_ADDR"
+          curl -s "https://www.duckdns.org/update?domains=$DOMAINS&token=$TOKEN&ip=$IP_ADDR"
 
       - name: Terraform Destroy
         if: github.event.inputs.action == 'destroy'
