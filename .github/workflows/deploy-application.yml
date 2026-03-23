@@ -218,7 +218,7 @@ jobs:
           helm upgrade --install gym-app ./helm/gym-app \
             --namespace ${{ env.DEPLOY_ENV }} \
             --create-namespace \
-            -f ./helm/gym-app/values-${{ env.DEPLOY_ENV }}.yaml \
+            -f ./kube/values/${{ env.DEPLOY_ENV }}.yaml \
             --set acr.name=${{ env.ACR_NAME }} \
             --set db.enabled=${{ github.event.inputs.deploy_db || 'true' }} \
             --set db.tag=$DB_TAG \

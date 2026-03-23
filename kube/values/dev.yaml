@@ -1,0 +1,64 @@
+domain: the-fitzone-dev.duckdns.org
+tlsSecret: gym-tls-dev
+services:
+  db:
+    replicaCount: 1
+    image: gym-db
+    port: 3306
+    env:
+      - name: MYSQL_ROOT_PASSWORD
+        value: "gymrootpass"
+      - name: MYSQL_DATABASE
+        value: "gymapp"
+  booking:
+    replicaCount: 1
+    image: gym-booking
+    port: 4001
+    env:
+      - name: DB_HOST
+        value: "gym-db-service"
+      - name: DB_USER
+        value: "root"
+      - name: DB_PASSWORD
+        value: "gymrootpass"
+      - name: DB_NAME
+        value: "gymapp"
+      - name: NOTIFIER_URL
+        value: "http://gym-notifier-service:4003"
+  membership:
+    replicaCount: 1
+    image: gym-membership
+    port: 4002
+    env:
+      - name: DB_HOST
+        value: "gym-db-service"
+      - name: DB_USER
+        value: "root"
+      - name: DB_PASSWORD
+        value: "gymrootpass"
+      - name: DB_NAME
+        value: "gymapp"
+      - name: NOTIFIER_URL
+        value: "http://gym-notifier-service:4003"
+  notifier:
+    replicaCount: 1
+    image: gym-notifier
+    port: 4003
+    env:
+      - name: DB_HOST
+        value: "gym-db-service"
+      - name: DB_USER
+        value: "root"
+      - name: DB_PASSWORD
+        value: "gymrootpass"
+      - name: DB_NAME
+        value: "gymapp"
+  frontend:
+    replicaCount: 1
+    image: gym-frontend
+    port: 80
+    env:
+      - name: REACT_APP_BOOKING_URL
+        value: "http://gym-booking-service:4001"
+      - name: REACT_APP_MEMBERSHIP_URL
+        value: "http://gym-membership-service:4002"
