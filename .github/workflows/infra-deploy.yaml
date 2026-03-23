@@ -99,8 +99,8 @@ jobs:
           ACR_NAME=$(terraform output -raw acr_name)
           echo "acr_name=$ACR_NAME" >> $GITHUB_OUTPUT
           
-          # Fetch the Public IP address of the App Gateway
-          PUBLIC_IP=$(az network public-ip show --resource-group "tfstate-mgmt-rg" --name "gym-shared-appgw-pip" --query ipAddress -o tsv)
+          # Use Terraform output for the IP address
+          PUBLIC_IP=$(terraform output -raw public_ip)
           echo "public_ip=$PUBLIC_IP" >> $GITHUB_OUTPUT
         working-directory: ./infrastructure
 
