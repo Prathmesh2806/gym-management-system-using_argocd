@@ -95,6 +95,9 @@ jobs:
             --create-namespace \
             --version v1.13.0 \
             --set installCRDs=true
+          
+          # 5. Apply Cluster-wide Issuers (Independent of Helm releases to avoid ownership errors)
+          kubectl apply -f ../kube/cluster-issuer.yaml
         working-directory: ./infrastructure
 
       - name: Get ACR Name and Public IP
