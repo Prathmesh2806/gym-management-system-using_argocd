@@ -90,8 +90,13 @@ jobs:
           echo "RG_NAME=gym-app-shared-rg" >> $GITHUB_ENV
           echo "CLUSTER_NAME=gym-shared-aks" >> $GITHUB_ENV
           
-          # We use a single shared ACR
-          echo "ACR_NAME=gymappregshared" >> $GITHUB_ENV
+          # Fetch the dynamic ACR name using Azure CLI (more reliable than hardcoding)
+          ACR_NAME_ACTUAL=$(az acr list --resource-group gym-app-shared-rg --query "[?contains(name, 'gymappregistryshared')].name" -o tsv | head -n 1)
+          if [ -z "$ACR_NAME_ACTUAL" ]; then
+             echo "ACR_NAME=gymappregshared" >> $GITHUB_ENV # Fallback
+          else
+             echo "ACR_NAME=$ACR_NAME_ACTUAL" >> $GITHUB_ENV
+          fi
           
           # For promotions, if needed, we can still reference a source ACR
           echo "DEV_ACR_NAME=gymappregshared" >> $GITHUB_ENV

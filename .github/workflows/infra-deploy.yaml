@@ -44,7 +44,6 @@ jobs:
           az group create --name "tfstate-mgmt-rg" --location "eastus2"
           az storage account create --name "gymtfstatesharedunique" --resource-group "tfstate-mgmt-rg" --sku Standard_LRS
           az storage container create --name "tfstate" --account-name "gymtfstatesharedunique"
-          az network public-ip create --resource-group "tfstate-mgmt-rg" --name "gym-shared-appgw-pip" --sku Standard --allocation-method Static --location "eastus2"
         continue-on-error: true
 
       # Step 2: Terraform Init (Dynamic Backend)

@@ -71,9 +71,13 @@ module "acr" {
   tags                = var.tags
 }
 
-data "azurerm_public_ip" "appgw_pip" {
+resource "azurerm_public_ip" "appgw_pip" {
   name                = "gym-shared-appgw-pip"
-  resource_group_name = var.pip_resource_group
+  resource_group_name = azurerm_resource_group.gym_rg.name
+  location            = azurerm_resource_group.gym_rg.location
+  allocation_method   = "Static"
+  sku                 = "Standard"
+  tags                = var.tags
 }
 
 resource "azurerm_application_gateway" "appgw" {
@@ -105,7 +109,7 @@ resource "azurerm_application_gateway" "appgw" {
 
   frontend_ip_configuration {
     name                 = var.appgw_frontend_ip_config_name
-    public_ip_address_id = data.azurerm_public_ip.appgw_pip.id
+    public_ip_address_id = azurerm_public_ip.appgw_pip.id
   }
 
   backend_address_pool {
