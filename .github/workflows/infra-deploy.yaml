@@ -75,17 +75,21 @@ jobs:
           terraform apply -var="tags=$TAGS" -auto-approve "tfplan"
         working-directory: ./infrastructure
 
-      - name: Bootstrap Cluster (Install Cert-Manager)
+      - name: Bootstrap Cluster (Install Cert-Manager & Attach ACR)
         if: github.event.inputs.action == 'apply'
         run: |
           # 1. Get Cluster Credentials
           az aks get-credentials --resource-group "gym-app-shared-rg" --name "gym-shared-aks" --overwrite-existing
           
-          # 2. Add Jetstack Helm repo
+          # 2. Attach ACR to AKS (Ensures perfect pull permissions)
+          ACR_NAME=$(terraform output -raw acr_name)
+          az aks update --resource-group "gym-app-shared-rg" --name "gym-shared-aks" --attach-acr $ACR_NAME
+          
+          # 3. Add Jetstack Helm repo
           helm repo add jetstack https://charts.jetstack.io
           helm repo update
           
-          # 3. Install Cert-Manager with CRDs
+          # 4. Install Cert-Manager with CRDs
           helm upgrade --install cert-manager jetstack/cert-manager \
             --namespace cert-manager \
             --create-namespace \

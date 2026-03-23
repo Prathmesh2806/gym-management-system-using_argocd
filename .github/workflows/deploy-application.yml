@@ -107,9 +107,8 @@ jobs:
           az acr login --name ${{ env.ACR_NAME }}
           az aks get-credentials --resource-group ${{ env.RG_NAME }} --name ${{ env.CLUSTER_NAME }} --overwrite-existing
 
-      # --- Database Section (Build/Promote Only) ---
       - name: Prepare Database Image
-        if: github.event_name == 'push' || github.event.inputs.deploy_db == true || github.event.inputs.deploy_db == 'true' || github.event_name == 'repository_dispatch'
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'repository_dispatch'
         run: |
           SERVICE="db"
           SHORT_SHA=$(echo ${{ github.sha }} | cut -c1-8)
@@ -117,6 +116,9 @@ jobs:
           
           if [ "${{ github.event_name }}" == "push" ]; then
             if git diff --name-only HEAD^ HEAD | grep -q "src/$SERVICE"; then BUILD_REQUIRED=true; fi
+          elif [ "${{ github.event_name }}" == "workflow_dispatch" ] && [ -z "${{ env.DB_PROMOTE }}" ]; then
+             # Force build on manual run if no promote tag provided
+             BUILD_REQUIRED=true
           elif [ -z "${{ env.DB_PROMOTE }}" ]; then
              if git diff --name-only HEAD^ HEAD | grep -q "src/$SERVICE"; then BUILD_REQUIRED=true; fi
           fi
@@ -125,7 +127,7 @@ jobs:
           if [ -n "${{ env.DB_PROMOTE }}" ]; then
             FINAL_TAG=${{ env.DB_PROMOTE }}
           elif [ "$BUILD_REQUIRED" == "true" ]; then
-            FINAL_TAG="$SERVICE-$SHORT_SHA"
+            FINAL_TAG="$SERVICE-${{ env.DEPLOY_ENV }}-$SHORT_SHA"
             docker build -t ${{ env.ACR_NAME }}.azurecr.io/gym-$SERVICE:$FINAL_TAG ./src/$SERVICE
             docker push ${{ env.ACR_NAME }}.azurecr.io/gym-$SERVICE:$FINAL_TAG
           else
@@ -146,9 +148,7 @@ jobs:
             SHOULD_RUN=false
             if [ "${{ github.event_name }}" == "push" ]; then SHOULD_RUN=true;
             elif [ "${{ github.event_name }}" == "repository_dispatch" ]; then SHOULD_RUN=true;
-            elif [ "${{ github.event.inputs.deploy_booking }}" == "true" ] && [ "$SERVICE" == "booking" ]; then SHOULD_RUN=true;
-            elif [ "${{ github.event.inputs.deploy_membership }}" == "true" ] && [ "$SERVICE" == "membership" ]; then SHOULD_RUN=true;
-            elif [ "${{ github.event.inputs.deploy_notifier }}" == "true" ] && [ "$SERVICE" == "notifier" ]; then SHOULD_RUN=true;
+            elif [ "${{ github.event.inputs.env }}" != "" ]; then SHOULD_RUN=true; # manual run
             fi
 
             if [ "$SHOULD_RUN" == "true" ]; then
@@ -156,14 +156,15 @@ jobs:
               if [ "${{ github.event_name }}" == "push" ]; then
                 if git diff --name-only HEAD^ HEAD | grep -q "src/$SERVICE"; then BUILD_REQUIRED=true; fi
               elif [ -z "$PROMOTE_TAG" ]; then
-                if git diff --name-only HEAD^ HEAD | grep -q "src/$SERVICE"; then BUILD_REQUIRED=true; fi
+                # On manual run, if no promote tag, we force a build for safety
+                BUILD_REQUIRED=true
               fi
 
               FINAL_TAG=""
               if [ -n "$PROMOTE_TAG" ]; then
                 FINAL_TAG=$PROMOTE_TAG
               elif [ "$BUILD_REQUIRED" == "true" ]; then
-                FINAL_TAG="$SERVICE-$SHORT_SHA"
+                FINAL_TAG="$SERVICE-${{ env.DEPLOY_ENV }}-$SHORT_SHA"
                 docker build -t ${{ env.ACR_NAME }}.azurecr.io/gym-$SERVICE:$FINAL_TAG ./src/$SERVICE
                 docker push ${{ env.ACR_NAME }}.azurecr.io/gym-$SERVICE:$FINAL_TAG
               else
@@ -175,9 +176,8 @@ jobs:
             fi
           done
 
-      # --- Frontend Section (Build/Promote Only) ---
       - name: Prepare Frontend Image
-        if: github.event_name == 'push' || github.event.inputs.deploy_frontend == true || github.event.inputs.deploy_frontend == 'true' || github.event_name == 'repository_dispatch'
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'repository_dispatch'
         run: |
           SERVICE="frontend"
           SHORT_SHA=$(echo ${{ github.sha }} | cut -c1-8)
@@ -185,6 +185,9 @@ jobs:
           
           if [ "${{ github.event_name }}" == "push" ]; then
             if git diff --name-only HEAD^ HEAD | grep -q "src/$SERVICE"; then BUILD_REQUIRED=true; fi
+          elif [ "${{ github.event_name }}" == "workflow_dispatch" ] && [ -z "${{ env.FRONTEND_PROMOTE }}" ]; then
+            # Force build on manual run if no promote tag provided
+            BUILD_REQUIRED=true
           elif [ -z "${{ env.FRONTEND_PROMOTE }}" ]; then
             if git diff --name-only HEAD^ HEAD | grep -q "src/$SERVICE"; then BUILD_REQUIRED=true; fi
           fi
@@ -193,7 +196,7 @@ jobs:
           if [ -n "${{ env.FRONTEND_PROMOTE }}" ]; then
             FINAL_TAG=${{ env.FRONTEND_PROMOTE }}
           elif [ "$BUILD_REQUIRED" == "true" ]; then
-            FINAL_TAG="$SERVICE-$SHORT_SHA"
+            FINAL_TAG="$SERVICE-${{ env.DEPLOY_ENV }}-$SHORT_SHA"
             docker build -t ${{ env.ACR_NAME }}.azurecr.io/gym-$SERVICE:$FINAL_TAG ./src/$SERVICE
             docker push ${{ env.ACR_NAME }}.azurecr.io/gym-$SERVICE:$FINAL_TAG
           else
