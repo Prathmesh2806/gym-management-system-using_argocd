@@ -72,8 +72,25 @@ jobs:
         if: github.event.inputs.action == 'apply'
         run: |
           TAGS='{"project"="gym-management", "environment"="shared", "managed_by"="terraform"}'
-          terraform apply -var="tags=$TAGS" "tfplan"
+          terraform apply -var="tags=$TAGS" -auto-approve "tfplan"
         working-directory: ./infrastructure
+
+      - name: Bootstrap Cluster (Install Cert-Manager)
+        if: github.event.inputs.action == 'apply'
+        run: |
+          # 1. Get Cluster Credentials
+          az aks get-credentials --resource-group "gym-app-shared-rg" --name "gym-shared-aks" --overwrite-existing
+          
+          # 2. Add Jetstack Helm repo
+          helm repo add jetstack https://charts.jetstack.io
+          helm repo update
+          
+          # 3. Install Cert-Manager with CRDs
+          helm upgrade --install cert-manager jetstack/cert-manager \
+            --namespace cert-manager \
+            --create-namespace \
+            --version v1.13.0 \
+            --set installCRDs=true
 
       - name: Get ACR Name and Public IP
         if: github.event.inputs.action == 'apply'
