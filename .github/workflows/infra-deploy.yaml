@@ -98,6 +98,19 @@ jobs:
           
           # 5. Apply Cluster-wide Issuers (Independent of Helm releases to avoid ownership errors)
           kubectl apply -f ../kube/cluster-issuer.yaml
+          
+          # 6. Install ArgoCD
+          helm repo add argo https://argoproj.github.io/argo-helm
+          helm repo update
+          helm upgrade --install argocd argo/argo-cd \
+            --namespace argocd \
+            --create-namespace \
+            --version 5.51.6
+            
+          # 7. Bootstrap ArgoCD Applications
+          # Wait a few seconds for CRDs to be ready
+          sleep 10
+          kubectl apply -f ../argocd/application.yaml -n argocd
         working-directory: ./infrastructure
 
       - name: Get ACR Name and Public IP
