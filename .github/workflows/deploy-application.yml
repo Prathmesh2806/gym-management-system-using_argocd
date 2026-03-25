@@ -50,6 +50,8 @@ on:
         description: 'Frontend Image Tag (Leave empty to build fresh)'
         type: string
         default: ''
+permissions:
+  contents: write
 
 jobs:
   deploy:
@@ -205,28 +207,23 @@ jobs:
           echo "FRONTEND_TAG=$FINAL_TAG" >> $GITHUB_ENV
 
       # --- Unified Helm Deployment ---
-      - name: Deploy with Helm
+      - name: Commit Changes to Git (GitOps)
         run: |
-          # Use defaults from GITHUB_ENV if not specifically set in this run
-          DB_TAG=${{ env.DB_TAG || 'latest' }}
-          BOOKING_TAG=${{ env.BOOKING_TAG || 'latest' }}
-          MEMBERSHIP_TAG=${{ env.MEMBERSHIP_TAG || 'latest' }}
-          NOTIFIER_TAG=${{ env.NOTIFIER_TAG || 'latest' }}
-          FRONTEND_TAG=${{ env.FRONTEND_TAG || 'latest' }}
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
           
-          # Deploying with Helm
-          helm upgrade --install gym-app ./helm/gym-app \
-            --namespace ${{ env.DEPLOY_ENV }} \
-            --create-namespace \
-            -f ./kube/values/${{ env.DEPLOY_ENV }}.yaml \
-            --set acr.name=${{ env.ACR_NAME }} \
-            --set db.enabled=${{ github.event.inputs.deploy_db || 'true' }} \
-            --set db.tag=$DB_TAG \
-            --set booking.enabled=${{ github.event.inputs.deploy_booking || 'true' }} \
-            --set booking.tag=$BOOKING_TAG \
-            --set membership.enabled=${{ github.event.inputs.deploy_membership || 'true' }} \
-            --set membership.tag=$MEMBERSHIP_TAG \
-            --set notifier.enabled=${{ github.event.inputs.deploy_notifier || 'true' }} \
-            --set notifier.tag=$NOTIFIER_TAG \
-            --set frontend.enabled=${{ github.event.inputs.deploy_frontend || 'true' }} \
-            --set frontend.tag=$FRONTEND_TAG
+          VALUES_FILE="kube/values/${{ env.DEPLOY_ENV }}.yaml"
+          
+          # Update ACR name and service tags in the values file using yq
+          # yq is available on standard GitHub runners
+          yq -i ".acr.name = \"${{ env.ACR_NAME }}\"" $VALUES_FILE
+          yq -i ".db.tag = \"${{ env.DB_TAG || 'latest' }}\"" $VALUES_FILE
+          yq -i ".booking.tag = \"${{ env.BOOKING_TAG || 'latest' }}\"" $VALUES_FILE
+          yq -i ".membership.tag = \"${{ env.MEMBERSHIP_TAG || 'latest' }}\"" $VALUES_FILE
+          yq -i ".notifier.tag = \"${{ env.NOTIFIER_TAG || 'latest' }}\"" $VALUES_FILE
+          yq -i ".frontend.tag = \"${{ env.FRONTEND_TAG || 'latest' }}\"" $VALUES_FILE
+          
+          # Add, commit and push the change
+          git add $VALUES_FILE
+          git commit -m "chore(deploy): update image tags for ${{ env.DEPLOY_ENV }} [skip ci]"
+          git push origin main

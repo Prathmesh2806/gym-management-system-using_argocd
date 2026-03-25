@@ -1,0 +1,41 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: gym-app-dev
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Prathmesh2806/gym-management-system-using_argocd.git
+    targetRevision: main
+    path: helm/gym-app
+    helm:
+      valueFiles:
+        - "../../kube/values/dev.yaml"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: dev
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: gym-app-qa
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Prathmesh2806/gym-management-system-using_argocd.git
+    targetRevision: main
+    path: helm/gym-app
+    helm:
+      valueFiles:
+        - "../../kube/values/qa.yaml"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: qa
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
