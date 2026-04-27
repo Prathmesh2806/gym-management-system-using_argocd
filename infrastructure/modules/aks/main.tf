@@ -16,6 +16,9 @@ resource "azurerm_kubernetes_cluster" "aks" {
     type = "SystemAssigned"
   }
 
+  oidc_issuer_enabled       = true
+  workload_identity_enabled = true
+
   # --Enabled Application Gateway Ingress Controller ---
   ingress_application_gateway {
     gateway_id = var.app_gateway_id
