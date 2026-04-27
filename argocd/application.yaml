@@ -16,6 +16,9 @@ spec:
     server: https://kubernetes.default.svc
     namespace: dev
   syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
     syncOptions:
       - CreateNamespace=true
 ---
@@ -37,5 +40,8 @@ spec:
     server: https://kubernetes.default.svc
     namespace: qa
   syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
     syncOptions:
       - CreateNamespace=true
