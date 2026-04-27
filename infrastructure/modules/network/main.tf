@@ -129,6 +129,18 @@ resource "azurerm_network_security_group" "app_nsg" {
     source_address_prefix      = "*"
     destination_address_prefix = "*"
   }
+
+  security_rule {
+    name                       = "AllowHTTPSInbound"
+    priority                   = 110
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "443"
+    source_address_prefix      = "*"
+    destination_address_prefix = "*"
+  }
 }
 
 resource "azurerm_subnet_network_security_group_association" "app_assoc" {
@@ -161,4 +173,53 @@ resource "azurerm_subnet_network_security_group_association" "db_assoc" {
   count                     = var.db_subnet_count
   subnet_id                 = azurerm_subnet.db[count.index].id
   network_security_group_id = azurerm_network_security_group.db_nsg.id
+}
+
+# --- Application Gateway Security (Required for V2) ---
+resource "azurerm_network_security_group" "appgw_nsg" {
+  name                = "gym-appgw-nsg-${var.env}"
+  location            = var.location
+  resource_group_name = var.resource_group_name
+  tags                = var.tags
+
+  security_rule {
+    name                       = "AllowHTTP"
+    priority                   = 100
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "80"
+    source_address_prefix      = "*"
+    destination_address_prefix = "*"
+  }
+
+  security_rule {
+    name                       = "AllowHTTPS"
+    priority                   = 110
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "443"
+    source_address_prefix      = "*"
+    destination_address_prefix = "*"
+  }
+
+  security_rule {
+    name                       = "AllowGatewayManager"
+    priority                   = 120
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "65200-65535"
+    source_address_prefix      = "GatewayManager"
+    destination_address_prefix = "*"
+  }
+}
+
+resource "azurerm_subnet_network_security_group_association" "appgw_assoc" {
+  subnet_id                 = azurerm_subnet.appgw.id
+  network_security_group_id = azurerm_network_security_group.appgw_nsg.id
 }
