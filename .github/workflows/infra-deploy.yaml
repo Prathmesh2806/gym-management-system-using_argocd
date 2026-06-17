@@ -41,6 +41,13 @@ jobs:
       # Step 1: Backend Storage check
       - name: Ensure Backend Storage Exists
         run: |
+          echo "=== Registering Azure Resource Providers ==="
+          az provider register --namespace Microsoft.Storage
+          az provider register --namespace Microsoft.Network
+          az provider register --namespace Microsoft.Compute
+          az provider register --namespace Microsoft.ContainerService
+          az provider register --namespace Microsoft.ContainerRegistry
+          
           echo "=== Debug Azure Subscriptions ==="
           az account list --output table
           echo "=== Debug Secret Values (Partially Unmasked) ==="
