@@ -63,14 +63,14 @@ services:
       - name: REACT_APP_MEMBERSHIP_URL
         value: "http://gym-membership-service:4002"
 acr:
-  name: gymappregistrysharedhjyqzb
+  name: gymappregistryshared0csric
 db:
-  tag: db-dev-97eb7651
+  tag: db-dev-4031bcf6
 booking:
-  tag: booking-dev-97eb7651
+  tag: booking-dev-4031bcf6
 membership:
-  tag: membership-dev-97eb7651
+  tag: membership-dev-4031bcf6
 notifier:
-  tag: notifier-dev-97eb7651
+  tag: notifier-dev-4031bcf6
 frontend:
-  tag: frontend-dev-97eb7651
+  tag: frontend-dev-4031bcf6
