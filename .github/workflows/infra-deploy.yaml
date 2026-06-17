@@ -58,8 +58,8 @@ jobs:
           
           az account set --subscription "${{ secrets.AZURE_SUBSCRIPTION_ID }}"
           az group create --name "tfstate-mgmt-rg" --location "eastus2" --subscription "${{ secrets.AZURE_SUBSCRIPTION_ID }}"
-          az storage account create --name "gymtfstatesharedunique" --resource-group "tfstate-mgmt-rg" --sku Standard_LRS --subscription "${{ secrets.AZURE_SUBSCRIPTION_ID }}"
-          az storage container create --name "tfstate" --account-name "gymtfstatesharedunique" --subscription "${{ secrets.AZURE_SUBSCRIPTION_ID }}"
+          az storage account create --name "gymtfstateshared2806" --resource-group "tfstate-mgmt-rg" --sku Standard_LRS --subscription "${{ secrets.AZURE_SUBSCRIPTION_ID }}"
+          az storage container create --name "tfstate" --account-name "gymtfstateshared2806" --subscription "${{ secrets.AZURE_SUBSCRIPTION_ID }}"
         continue-on-error: true
 
       # Step 2: Terraform Init (Dynamic Backend)
@@ -67,7 +67,7 @@ jobs:
         run: |
           terraform init \
             -backend-config="resource_group_name=tfstate-mgmt-rg" \
-            -backend-config="storage_account_name=gymtfstatesharedunique" \
+            -backend-config="storage_account_name=gymtfstateshared2806" \
             -backend-config="container_name=tfstate" \
             -backend-config="key=terraform.tfstate"
         working-directory: ./infrastructure
