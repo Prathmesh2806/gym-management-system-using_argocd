@@ -41,9 +41,10 @@ jobs:
       # Step 1: Backend Storage check
       - name: Ensure Backend Storage Exists
         run: |
-          az group create --name "tfstate-mgmt-rg" --location "eastus2"
-          az storage account create --name "gymtfstatesharedunique" --resource-group "tfstate-mgmt-rg" --sku Standard_LRS
-          az storage container create --name "tfstate" --account-name "gymtfstatesharedunique"
+          az account set --subscription "${{ secrets.AZURE_SUBSCRIPTION_ID }}"
+          az group create --name "tfstate-mgmt-rg" --location "eastus2" --subscription "${{ secrets.AZURE_SUBSCRIPTION_ID }}"
+          az storage account create --name "gymtfstatesharedunique" --resource-group "tfstate-mgmt-rg" --sku Standard_LRS --subscription "${{ secrets.AZURE_SUBSCRIPTION_ID }}"
+          az storage container create --name "tfstate" --account-name "gymtfstatesharedunique" --subscription "${{ secrets.AZURE_SUBSCRIPTION_ID }}"
         continue-on-error: true
 
       # Step 2: Terraform Init (Dynamic Backend)
