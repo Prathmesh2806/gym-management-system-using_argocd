@@ -79,6 +79,7 @@ jobs:
           terraform plan \
             -var="env=shared" \
             -var="tags=$TAGS" \
+            -var="subscription_id=${{ secrets.AZURE_SUBSCRIPTION_ID }}" \
             -var-file="envs/shared.tfvars" \
             -out=tfplan
         working-directory: ./infrastructure
@@ -107,7 +108,7 @@ jobs:
           
           # 4. Install Cert-Manager with CRDs
           helm upgrade --install cert-manager jetstack/cert-manager \
-            --namespace cert-manager \
+            -n cert-manager \
             --create-namespace \
             --version v1.13.0 \
             --set installCRDs=true
@@ -119,7 +120,7 @@ jobs:
           helm repo add argo https://argoproj.github.io/argo-helm
           helm repo update
           helm upgrade --install argocd argo/argo-cd \
-            --namespace argocd \
+            -n argocd \
             --create-namespace \
             --version 5.51.6
             
@@ -160,6 +161,7 @@ jobs:
           terraform destroy \
             -var="env=shared" \
             -var="tags=$TAGS" \
+            -var="subscription_id=${{ secrets.AZURE_SUBSCRIPTION_ID }}" \
             -var-file="envs/shared.tfvars" \
             -auto-approve
         working-directory: ./infrastructure
